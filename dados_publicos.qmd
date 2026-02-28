@@ -1,0 +1,591 @@
+---
+title: "dados_publicos"
+format: html
+editor: visual
+---
+
+## Dados
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(sjmisc)
+
+base_periodicos <- 
+read_excel("../dados/br-capes-colsucup-prod-detalhe-bibliografica-2023a2024-2025-12-01-artpe.xlsx")
+
+base_periodicos0 <- 
+read_excel("../dados/br-capes-colsucup-prod-detalhe-bibliografica-2021a2022-2025-12-01-artpe.xlsx")
+
+base_periodicos0 %>% glimpse()
+base_periodicos %>% glimpse()
+
+base_periodicos0 %>% frq(AN_BASE_PRODUCAO )
+base_periodicos %>% frq(AN_BASE_PRODUCAO )
+
+base_periodicos  <- bind_rows(base_periodicos0 , base_periodicos)
+
+rm(base_periodicos_detlahada, base_periodicos0)
+
+
+base_periodicos_resum  <- 
+read_excel("../dados/br-capes-colsucup-producao-2021a2024-2025-12-01-bibliografica-artpe-p1.xlsx")
+
+base_periodicos_resum2  <- 
+read_excel("../dados/br-capes-colsucup-producao-2021a2024-2025-12-01-bibliografica-artpe-p2.xlsx")
+
+base_periodicos_resum %>% glimpse()
+base_periodicos_resum2 %>% glimpse()
+
+
+frq(base_periodicos_resum$AN_BASE)
+frq(base_periodicos_resum2$AN_BASE)
+
+
+save.image("~/Dropbox (Personal)/CAPES/quadrienal_2025/dados/capes_2025.RData")
+
+```
+
+## Filtrando dados da psico
+
+```{r}
+names(base_periodicos)
+
+base_periodicos <- base_periodicos %>%
+  filter(CD_PROGRAMA_IES %in% base_programa$cod_ppg )
+
+base_periodicos <- base_periodicos %>%
+  filter(CD_PROGRAMA_IES %in% base_programa$cod_ppg )
+
+base_periodicos_resum <- base_periodicos_resum %>%
+  filter(CD_PROGRAMA_IES %in% base_programa$cod_ppg )
+
+base_periodicos_resum2 <- base_periodicos_resum2 %>%
+  filter(CD_PROGRAMA_IES %in% base_programa$cod_ppg )
+
+base_periodicos %>% frq(AN_BASE_PRODUCAO )
+
+
+
+flat_table(base_periodicos, sg_entidade_ensino, an_base_producao)
+
+names(base_periodicos_resum)
+
+
+
+```
+
+## Separando ISSN e nome da revista
+
+```{r}
+
+base_periodicos %>% glimpse()
+
+base_periodicos <- base_periodicos %>%
+  tidyr::extract(
+    col = DS_ISSN,
+    into = c("issn", "journal_name"),
+    regex = "^\\(([^)]+)\\)\\s*(.*)"
+  )
+
+base_periodicos <- janitor::clean_names(base_periodicos)
+
+```
+
+## Qualis 2026
+
+```{r}
+
+qualis_2026 <- read_excel("../dados/classificações_publicadas_todas_as_areas_avaliacao1768259646562.xlsx") %>% janitor::clean_names()
+
+qualis_2026 %>% glimpse()
+
+qualis_2026 <- qualis_2026 %>% 
+  pivot_wider(names_from = area_de_avaliacao, values_from = "estrato") %>%
+  janitor::clean_names()
+
+qualis_2026 %>% filter(!is.na(psicologia)) %>% view()
+
+names(base_periodicos)
+
+base_periodicos <- base_periodicos[, 1:27] %>% 
+  left_join(
+    {qualis_2026 %>% select(issn , titulo, psicologia)}, 
+    by = "issn", 
+    suffix = c("", ".2") )
+
+is.na(base_periodicos$psicologia) %>% frq()
+
+base_periodicos[is.na(base_periodicos$psicologia), ] %>% view()
+
+```
+
+## Simago
+
+```{r}
+# install
+usethis::edit_r_environ()
+devtools::install_github("ikashnitsky/sjrdata")
+
+# load
+library(sjrdata)
+
+sjrdata
+
+sjr_countries %>% glimpse( )
+sjr_journals  %>% glimpse( )
+sjr_countries_total  %>% glimpse( )
+
+sjr_countries %>% view()
+sjr_countries_total  %>% view()
+
+sjr_journals %>% view()
+# explore table
+view(sjr_countries)
+
+names(sjr_journals)
+frq(sjr_journals$c)
+frq(sjr_journals$cate)
+sjr_journals %>% view
+
+sjr_journals %>% frq(year)
+# create a dataframe of 2021 
+# sjr_db <- sjr_journals %>% filter(year == 2021)
+
+sjr_db <- sjr_journals 
+sjr_db %>% glimpse 
+sjr_db %>% pull(sourceid) %>% duplicated() %>% frq()
+
+#sjr_db_issn$issn[1] %>% str_split_1(",")
+
+
+# unpack issn and categories since there are multiples for the same journal  
+
+sjr_db_issn <- sjr_db %>% 
+ select(year, sourceid, issn ) %>%
+ mutate(issn = str_split(issn, ",")) %>%
+ unnest(issn)
+
+sjr_db_categories <- sjr_db %>% 
+ select(year, sourceid, categories ) %>%
+ mutate(categories = str_split(categories, ";")) %>%
+ unnest(categories)
+
+sjr_db_areas <- sjr_db %>% 
+ select(year, sourceid, areas ) %>%
+ mutate(areas = str_split(areas, ";")) %>%
+ unnest(areas)
+
+
+sjr_db_areas <- sjr_db_areas %>%
+  mutate(
+    areas = gsub('[\"“”]', "", areas)
+  )
+ 
+frq(sjr_db_categories$categories)
+frq(sjr_db_areas$areas)
+
+
+
+```
+
+##Filtrando quais revistas a psico publico que tem avaliação na scopus
+
+Temos 3955 revistas na base Dessas somente 1077 (27% no scopus) tem Scopus :0!
+
+```{r}
+
+1077/3955
+names(base_periodicos )
+
+base_periodicos <- base_periodicos %>%
+  mutate(
+    issn_clean = gsub("-", "", issn)
+  )
+
+issn_na_base <- unique(base_periodicos$issn_clean)
+
+sjr_db_issn <- sjr_db_issn %>% filter(issn %in% issn_na_base )
+ 
+unique(sjr_db_issn$issn) %>% length()
+
+names(sjr_db_issn)
+
+sjr_psico <- sjr_db_issn %>% 
+  left_join(
+    sjr_db, by = c("sourceid", "year"),
+    suffix = c("", ".2") 
+    )
+
+issns_matched <- unique(sjr_db_issn$issn) 
+issns_em_2024 <- sjr_psico %>% filter(year=="2024") %>% pull(issn.x)
+issns_faltantes <- issns_matched[!(issns_matched   %in% issns_em_2024)]
+
+
+sjr_psico <- sjr_psico %>% filter(year=="2024") %>%
+  bind_rows(
+    {
+      sjr_psico  %>% 
+        filter(issn %in% issns_faltantes ) %>% 
+        filter(!is.na(sjr)) %>%
+        arrange(issn, desc(year)) %>%
+        group_by(issn) %>%
+        slice_head() %>%
+        ungroup()
+            
+    }
+  )
+
+
+```
+
+## Trazendo dados do scopus para base de artigos
+
+```{r}
+names(base_periodicos)
+
+base_periodicos <- base_periodicos[, 1:30] %>% 
+  left_join(
+    sjr_psico, 
+    by = c("issn_clean" = "issn"),
+     suffix = c("", ".2") )
+
+length(unique(base_periodicos$sourceid))
+frq(base_periodicos$sjr_best_quartile)
+
+```
+
+## Numero de docentes permanentes por ano
+
+```{r}
+
+
+base_periodicos %>% glimpse()
+doc_permanentes %>% glimpse()
+
+names(base_periodicos)
+
+base_periodicos <- base_periodicos[ , 1:55] %>% 
+  left_join(
+    doc_permanentes, 
+    by =c("cd_programa_ies"="cod_ppg", "an_base_producao"="ano_base"),
+    suffix = c("", ".2") 
+    )
+
+
+library(psych)
+
+describe(base_periodicos$doc_permanentes)
+
+
+
+```
+
+## Dados dos programas
+
+```{r}
+base_programa %>% glimpse()
+base_periodicos %>% glimpse()
+
+base_periodicos <- base_periodicos %>% 
+  left_join(
+    base_programa, by = c("cd_programa_ies"="cod_ppg"),
+    suffix = c("", ".2") )
+
+```
+
+## Artigos sanity check
+
+```{r}
+
+
+base_periodicos %>% 
+  group_by(sigla_ppg, an_base_producao, nota_conceito) %>%
+  count() %>%
+  arrange(desc(nota_conceito)) %>%
+  pivot_wider(names_from = an_base_producao, values_from = n) %>%
+  view()
+  
+
+
+frq(base_periodicos$sigla_ppg)
+
+base_periodicos %>% flat_table( ano_base, an_base_producao)
+
+base_periodicos %>% glimpse()
+names(base_periodicos)
+
+base_periodicos_resum <- janitor::clean_names(base_periodicos_resum )
+base_periodicos_resum2 <- janitor::clean_names(base_periodicos_resum2)
+
+names(base_periodicos_resum)
+base_periodicos %>% view()
+
+
+# Separa base de artigos
+ 
+base_periodicos <- base_periodicos %>%
+   left_join(
+     base_periodicos_resum[ , c(6, 8)],
+     by = "id_add_producao_intelectual"
+   ) 
+
+# Ha duplicações por causa do nome do artigo ser NA
+base_periodicos %>% 
+  select(
+      cd_programa_ies, sigla_ppg,  nota_conceito, an_base_producao, issn,
+      ies_principal_sigla, ies_principal_nome, nm_producao, 
+      ds_idioma, nm_cidade, journal_name, 
+      psicologia, sjr, h_index, sjr_best_quartile, citable_docs_3years,
+      doc_permanentes,  citations_doc_2years ) %>%
+  arrange(
+    desc(nota_conceito), 
+    sigla_ppg, 
+    an_base_producao
+    ) %>%
+  ungroup() %>%
+   group_by(
+    cd_programa_ies, issn, sigla_ppg,
+    journal_name, nm_producao 
+    ) %>%
+    mutate(
+      duplic = n(),
+      duplic_order = row_number()
+      ) %>%
+    ungroup() %>%
+    arrange(
+    cd_programa_ies, issn, sigla_ppg,
+    journal_name, nm_producao,
+    duplic_order
+    
+    ) %>%
+  select( cd_programa_ies, issn, sigla_ppg,
+    journal_name, nm_producao,
+    duplic_order) %>%
+  view()
+
+names(base_periodicos)
+frq(base_periodicos$modalidade) 
+
+
+pontos_artigos <- c(100, 87.5, 75, 62.5, 50, 37.5, 25, 12.5, 0, 0)
+pontos_artigos_acd <- c(100, 87.5, 75, 62.5, 50, 37.5, 0, 0, 0, 0)
+pontos_artigos_prof <- c(100, 87.5, 75, 62.5, 50, 37.5, 25, 0, 0, 0)
+   
+names(pontos_artigos) <- c("A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C", "NP")
+names(pontos_artigos_acd) <- c("A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C", "NP")
+names(pontos_artigos_prof) <- c("A1", "A2", "A3", "A4", "B1", "B2", "B3", "B4", "C", "NP")
+
+
+base_periodicos$estrato_pnt = ifelse(
+     base_periodicos$modalidade == "ACADÊMICO", 
+     pontos_artigos_acd[base_periodicos$psicologia],
+     pontos_artigos_prof[base_periodicos$psicologia]
+   )
+
+ 
+ppg_artigos_public <-  base_periodicos %>% 
+   group_by(
+     an_base_producao, cd_programa_ies, sigla_ppg, psicologia
+   ) %>%
+  summarise(
+   n_artigos = n(),
+   estrato_pnt_soma = sum(estrato_pnt, na.rm = T),
+   doc_permanentes = first(doc_permanentes),
+   nota_conceito = first(nota_conceito)
+   
+   ) %>%
+   ungroup() %>%
+   select(-psicologia) %>%
+   group_by( an_base_producao, cd_programa_ies, sigla_ppg) %>%
+    summarise(
+     n_artigos = sum(n_artigos),
+     estrato_pnt_soma = sum(estrato_pnt_soma ),
+     doc_permanentes = first(doc_permanentes),
+     nota_conceito = first(nota_conceito)
+    ) %>%
+    ungroup() %>%
+     mutate(
+     ind_2.4.1_artg1 =  estrato_pnt_soma/doc_permanentes
+    ) %>%
+    ungroup() %>%
+    select(-an_base_producao) %>%
+    group_by(cd_programa_ies, sigla_ppg) %>%
+    summarise(
+      n_anos = n(),
+      n_artigos = sum(n_artigos),
+      estrato_pnt_soma = sum(estrato_pnt_soma ),
+      ind_2.4.1_artg1 = mean(ind_2.4.1_artg1),
+      nota_conceito = first(nota_conceito)
+     ) %>%
+  left_join(base_programa[ , c(2, 13 )], by = c("cd_programa_ies" = "cod_ppg"), 
+            suffix = c("", ".2"))
+
+ppg_artigos_public %>%
+  ggplot(aes(y=ind_2.4.1_artg1, x = ind_2.4.1_artg1.2, color = nota_conceito)) +
+  geom_abline(slope=1, intercept = 0) +
+  geom_point
+
+cor(ppg_artigos_public$ind_2.4.1_artg1, ppg_artigos_public$ind_2.4.1_artg1.2, use = "pair")
+
+
+ 
+names(base_programa)
+
+  
+```
+
+
+## Calculo da scopus
+
+```{r}
+
+ppg_artigos_public2 <- 
+  base_periodicos %>% 
+  group_by( an_base_producao, cd_programa_ies, sigla_ppg ) %>% 
+  summarise( 
+    doc_permanentes = first(doc_permanentes),
+ nota_conceito = first(nota_conceito), n_artigos = n(), n_melhor_prod =   doc_permanentes*4, estrato_pnt_soma = sum(estrato_pnt, na.rm = T), ind_2.4.1_artg1 = estrato_pnt_soma/doc_permanentes,
+
+n_artigos_no_scopus = sum(!is.na(sjr)), prp_artigos_no_scopus = (n_artigos_no_scopus / n_artigos), prp_artigos_no_scopus_mp = (n_artigos_no_scopus / n_melhor_prod), h_index = mean(h_index, na.rm=T), sjr = mean(sjr, na.rm=T), citable_docs_2years = mean(citations_doc_2years, na.rm=T),
+
+sjr_q1_n = sum(sjr_best_quartile =="Q1", na.rm=T), sjr_q2_n = sum(sjr_best_quartile =="Q2", na.rm=T), sjr_q3_n = sum(sjr_best_quartile =="Q3", na.rm=T), sjr_q4_n = sum(sjr_best_quartile =="Q4", na.rm=T),
+
+sjr_q1_prp = mean(sjr_best_quartile =="Q1", na.rm=T), sjr_q2_prp = mean(sjr_best_quartile =="Q2", na.rm=T), sjr_q3_prp = mean(sjr_best_quartile =="Q3", na.rm=T), sjr_q4_prp = mean(sjr_best_quartile =="Q4", na.rm=T),
+
+sjr_q1_prp_mp = sjr_q1_n/n_melhor_prod, sjr_q2_prp_mp = sjr_q2_n/n_melhor_prod, sjr_q3_prp_mp = sjr_q3_n/n_melhor_prod, sjr_q4_prp_mp = sjr_q4_n/n_melhor_prod ) %\>% ungroup() %\>%
+
+arrange(desc(nota_conceito), sigla_ppg, desc(an_base_producao)) %\>%
+
+group_by(cd_programa_ies, sigla_ppg) %>%
+
+summarise()
+
+ppg_artigos_public3 <- base_periodicos %>% 
+  group_by(an_base_producao, cd_programa_ies, sigla_ppg) %>%
+  summarise( 
+    doc_permanentes = first(doc_permanentes),
+    nota_conceito = first(nota_conceito), 
+    n_artigos = n(), 
+    n_melhor_prod = doc_permanentes * 4, 
+    estrato_pnt_soma = sum(estrato_pnt, na.rm = TRUE), 
+    ind_2.4.1_artg1 = estrato_pnt_soma / doc_permanentes,
+    n_artigos_no_scopus      = sum(!is.na(sjr)),
+    prp_artigos_no_scopus    = n_artigos_no_scopus / n_artigos,
+    prp_artigos_no_scopus_mp = n_artigos_no_scopus / n_melhor_prod,
+    h_index = mean(h_index, na.rm = TRUE),
+    sjr     = mean(sjr, na.rm = TRUE),
+    citable_docs_2years = mean(citations_doc_2years, na.rm = TRUE),
+    
+    sjr_q1_n = sum(sjr_best_quartile == "Q1", na.rm = TRUE),
+    sjr_q2_n = sum(sjr_best_quartile == "Q2", na.rm = TRUE),
+    sjr_q3_n = sum(sjr_best_quartile == "Q3", na.rm = TRUE),
+    sjr_q4_n = sum(sjr_best_quartile == "Q4", na.rm = TRUE),
+    
+    sjr_q1_prp = mean(sjr_best_quartile == "Q1", na.rm = TRUE),
+    sjr_q2_prp = mean(sjr_best_quartile == "Q2", na.rm = TRUE),
+    sjr_q3_prp = mean(sjr_best_quartile == "Q3", na.rm = TRUE),
+    sjr_q4_prp = mean(sjr_best_quartile == "Q4", na.rm = TRUE),
+    
+    sjr_q1_prp_mp = sjr_q1_n / n_melhor_prod,
+    sjr_q2_prp_mp = sjr_q2_n / n_melhor_prod,
+    sjr_q3_prp_mp = sjr_q3_n / n_melhor_prod,
+    sjr_q4_prp_mp = sjr_q4_n / n_melhor_prod,
+    
+    sjr_q1_p_dp = sjr_q1_n / doc_permanentes,
+    sjr_q2_p_dp = sjr_q2_n / doc_permanentes,
+    sjr_q3_p_dp = sjr_q3_n / doc_permanentes,
+    sjr_q4_p_dp = sjr_q4_n / doc_permanentes,
+    
+     sjr_q1q2_p_dp = (sjr_q1_n + sjr_q2_n)  / doc_permanentes,
+   .groups = "drop") %>% 
+    arrange(desc(nota_conceito), sigla_ppg, desc(an_base_producao)) %>%      group_by(cd_programa_ies, sigla_ppg) %>% 
+    summarise( 
+      nota_conceito = first(nota_conceito), 
+      an_ini = min(an_base_producao), 
+      an_fim = max(an_base_producao), 
+      across(where(is.numeric) & !any_of(c("an_base_producao", "nota_conceito")),  ~ mean(.x, na.rm = TRUE)
+),
+.groups = "drop"
+
+)
+
+library(xlsx) 
+write.xlsx(
+  ppg_artigos_public3, 
+  file = "capes_psico_2025/ppg_artigos_public3.xlsx", 
+  showNA = F, append = T, 
+  sheetName = "base_publ_final")
+
+```
+
+
+```{r}
+
+dados_shinny <- readRDS("../capes_psico_2025/base_programa.RDS")
+
+dados_excel <- read_excel("../dados/ppg_artigos_public3.xlsx")
+
+names(dados_shinny )
+names(dados_excel)
+
+dados_shinny <- dados_shinny %>%
+  left_join(dados_excel[, c(2, 4, 5,9:35)], by = c( "cod_ppg" ="cd_programa_ies"    ) )
+
+dados_shinny$nota_conceito = dados_shinny$nota_conceito_25
+
+saveRDS(dados_shinny, file = "../capes_psico_2025/base_programa.RDS")
+
+```
+
+# Análise das áreas
+
+```{r}
+names(dados_excel)
+names(base_periodicos)
+
+base_periodicos <- base_periodicos %>% left_join(dados_excel[, c(2,4, 10)], by = "cd_programa_ies")
+
+frq(sjr_db_areas$areas)
+frq(sjr_db_categories$categories)
+
+
+base_periodicos %>% 
+  filter(nota_conceito_25 == "7") %>% 
+  left_join(sjr_db_areas, by = c("sourceid", "year"), suffix = c("", ".2")) %>%
+  mutate(areas.2 = trimws(areas.2)) %>%
+  flat_table( areas.2, sigla_ppg) %>%
+  as.data.frame() %>%
+  pivot_wider(names_from = sigla_ppg, values_from = Freq) %>%
+  xlsx::write.xlsx(file = "../dados/prod_areas.xlsx")
+
+
+base_periodicos %>% 
+  filter(nota_conceito_25 == "7") %>% 
+  left_join(sjr_db_categories, by = c("sourceid", "year"), suffix = c("", ".2")) %>%
+  mutate(categories.2 = trimws(categories.2)) %>%
+  flat_table( categories.2, sigla_ppg) %>%
+  as.data.frame() %>%
+  pivot_wider(names_from = sigla_ppg, values_from = Freq) %>%
+  xlsx::write.xlsx(file = "../dados/prod_areas.xlsx", append = T, sheet="categories")
+
+categories_table <- frq(sjr_db_categories$categories)
+
+categories_table2 <- sjr_db_categories %>% 
+  left_join(sjr_db_areas) %>% 
+  group_by(areas, categories) %>%
+  count() %>%
+  ungroup() %>%
+  mutate(frq = n/ sum(n))
+
+
+
+categories_table %>% 
+ xlsx::write.xlsx(file = "../dados/prod_areas.xlsx", append = T, sheet="categories_table")
+
+categories_table2 %>% 
+ xlsx::write.xlsx(file = "../dados/prod_areas.xlsx", append = T, sheet="categories_table2")
+
+
+```
+
